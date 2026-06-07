@@ -73,7 +73,7 @@ const statusMap: Record<string, { label: string; color: string; bgColor: string 
 };
 
 export default function Visits() {
-  const { visits, addVisit, updateVisit, user, addTimelineToVisit, clues } = useAppStore();
+  const { visits, addVisit, updateVisit, completeVisit, user, addTimelineToVisit, clues } = useAppStore();
   const [showModal, setShowModal] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -145,19 +145,15 @@ export default function Visits() {
 
   const handleSaveEdit = () => {
     if (!selectedVisit) return;
-    updateVisit(selectedVisit.id, {
-      actualDate: new Date(editForm.actualDate).toISOString(),
-      content: editForm.content,
-      issues: editForm.issues,
-      photos: editForm.photos,
-      status: 'completed',
-      statusName: '已完成',
-    });
-    addTimelineToVisit(
-      selectedVisit.id, 
-      'complete_visit', 
-      user.name, 
-      `完成走访，记录：${editForm.content.substring(0, 50)}...`
+    completeVisit(
+      selectedVisit.id,
+      {
+        actualDate: new Date(editForm.actualDate).toISOString(),
+        content: editForm.content,
+        issues: editForm.issues,
+        photos: editForm.photos,
+      },
+      user.name
     );
     setShowEdit(false);
     setSelectedVisit(null);

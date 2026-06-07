@@ -73,7 +73,16 @@ const Timeline = ({ records }: { records: TimelineRecord[] }) => (
 );
 
 export default function MediationPage() {
-  const { mediations, updateMediation, user, addTimelineToMediation, clues, addMessage } = useAppStore();
+  const { 
+    mediations, 
+    updateMediation, 
+    user, 
+    addTimelineToMediation, 
+    clues, 
+    addMessage,
+    markRelatedMessagesHandled,
+    markRelatedMessagesExpired
+  } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(mediations[0]?.id || null);
   const [showUserPlus, setShowUserPlus] = useState(false);
   const [showEscalate, setShowEscalate] = useState(false);
@@ -127,11 +136,14 @@ export default function MediationPage() {
       user.name,
       `改派调解员为：${assignMediator}`
     );
+    markRelatedMessagesHandled(selectedMediation.id, 'mediation');
+    markRelatedMessagesExpired(selectedMediation.id, 'mediation');
     addMessage({
       type: 'task',
       typeName: '任务提醒',
+      subType: 'mediation_assign',
       title: '新的调解案件指派',
-      content: `您被指派为调解案件「${selectedMediation.title}」的调解员`,
+      content: `您被指派为调解案件「${selectedMediation.title}」的调解员，请及时处理。`,
       relatedId: selectedMediation.id,
       relatedType: 'mediation',
       navigatePath: '/mediation',
@@ -165,9 +177,12 @@ export default function MediationPage() {
       user.name,
       `升级上报，原因：${escalateReason.substring(0, 50)}...`
     );
+    markRelatedMessagesHandled(selectedMediation.id, 'mediation');
+    markRelatedMessagesExpired(selectedMediation.id, 'mediation');
     addMessage({
       type: 'warning',
       typeName: '预警通知',
+      subType: 'mediation_escalate',
       title: '案件升级上报',
       content: `调解案件「${selectedMediation.title}」已升级上报，原因：${escalateReason}`,
       relatedId: selectedMediation.id,

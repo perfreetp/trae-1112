@@ -1,3 +1,4 @@
+import React from 'react';
 import ReactECharts from 'echarts-for-react';
 import { 
   FileText, 
@@ -8,12 +9,16 @@ import {
   TrendingUp,
   ArrowUpRight,
   ArrowDownRight,
-  MapPin
+  MapPin,
+  Home,
+  Handshake,
+  Bell
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { mockDailyStats, mockTypeStats, mockAreaStats, mockMonthlyTrend } from '@/data/statistics';
 import { CHART_COLORS } from '@/utils/constants';
-import { formatDate } from '@/utils/format';
+import { formatDate, formatRelativeTime } from '@/utils/format';
+import { useNavigate } from 'react-router-dom';
 
 const StatCard = ({ 
   title, 
@@ -61,11 +66,45 @@ const StatCard = ({
 );
 
 export default function Dashboard() {
-  const { dashboardStats, clues, messages } = useAppStore();
+  const navigate = useNavigate();
+  const { 
+    dashboardStats, 
+    clues, 
+    messages,
+    visits,
+    mediations,
+    generateReminderMessages 
+  } = useAppStore();
+  
+  React.useEffect(() => {
+    generateReminderMessages();
+  }, [generateReminderMessages]);
   
   const pendingClues = clues.filter(c => c.status === 'pending' || c.status === 'processing');
   const highRiskClues = clues.filter(c => c.riskLevel === 'high' || c.riskLevel === 'critical');
-  const overdueWarnings = messages.filter(m => m.type === 'reminder' || m.type === 'warning').slice(0, 5);
+  const unhandledMessages = messages.filter(m => !m.isHandled && !m.isExpired).slice(0, 5);
+  
+  const nearDeadlineVisits = visits.filter(v => {
+    if (v.status === 'completed' || !v.planDate) return false;
+    const diff = new Date(v.planDate).getTime() - Date.now();
+    return diff > 0 && diff <= 3 * 24 * 60 * 60 * 1000;
+  }).slice(0, 3);
+  
+  const nearDeadlineMediations = mediations.filter(m => {
+    if (m.status === 'closed' || m.status === 'completed' || !m.deadline) return false;
+    const diff = new Date(m.deadline).getTime() - Date.now();
+    return diff > 0 && diff <= 3 * 24 * 60 * 60 * 1000;
+  }).slice(0, 3);
+  
+  const overdueVisits = visits.filter(v => {
+    if (v.status === 'completed' || !v.planDate) return false;
+    return new Date(v.planDate).getTime() < Date.now();
+  }).slice(0, 3);
+  
+  const overdueMediations = mediations.filter(m => {
+    if (m.status === 'closed' || m.status === 'completed' || !m.deadline) return false;
+    return new Date(m.deadline).getTime() < Date.now();
+  }).slice(0, 3);
 
   const trendOption = {
     tooltip: {
@@ -252,6 +291,69 @@ export default function Dashboard() {
         />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div 
+          onClick={() => navigate('/visits')}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-500">待走访</p>
+            <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
+              <Home className="w-5 h-5 text-orange-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-orange-600">{dashboardStats.pendingVisits}</p>
+          {dashboardStats.nearDeadlineVisits > 0 && (
+            <p className="text-xs text-orange-500 mt-2 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {dashboardStats.nearDeadlineVisits} 条临近截止
+            </p>
+          )}
+        </div>
+        <div 
+          onClick={() => navigate('/mediation')}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-500">待调解</p>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Handshake className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-blue-600">{dashboardStats.pendingMediations}</p>
+          {dashboardStats.nearDeadlineMediations > 0 && (
+            <p className="text-xs text-blue-500 mt-2 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {dashboardStats.nearDeadlineMediations} 条临近截止
+            </p>
+          )}
+        </div>
+        <div 
+          onClick={() => navigate('/visits')}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-500">走访已超期</p>
+            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-red-600">{dashboardStats.overdueVisits}</p>
+        </div>
+        <div 
+          onClick={() => navigate('/mediation')}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-500">调解已超期</p>
+            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-red-600">{dashboardStats.overdueMediations}</p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
@@ -281,33 +383,50 @@ export default function Dashboard() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">预警提醒</h3>
-            <span className="px-2.5 py-1 bg-red-50 text-red-600 text-xs font-medium rounded-full">
-              {overdueWarnings.length} 条待处理
+            <h3 className="text-lg font-semibold text-gray-900">待办消息</h3>
+            <span 
+              onClick={() => navigate('/messages')}
+              className="px-2.5 py-1 bg-red-50 text-red-600 text-xs font-medium rounded-full cursor-pointer hover:bg-red-100"
+            >
+              {unhandledMessages.length} 条待处理
             </span>
           </div>
           <div className="space-y-3">
-            {overdueWarnings.map((warning) => (
-              <div 
-                key={warning.id}
-                className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
-              >
-                <div className={
-                  warning.type === 'warning' 
-                    ? 'w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0'
-                    : 'w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0'
-                }>
-                  <AlertTriangle className={
-                    warning.type === 'warning' ? 'w-4 h-4 text-red-600' : 'w-4 h-4 text-orange-600'
-                  } />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{warning.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{warning.content}</p>
-                  <p className="text-xs text-gray-400 mt-1">{formatDate(warning.createTime)}</p>
-                </div>
+            {unhandledMessages.length === 0 ? (
+              <div className="py-8 text-center text-gray-400">
+                <Bell className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">暂无待办消息</p>
               </div>
-            ))}
+            ) : (
+              unhandledMessages.map((msg) => (
+                <div 
+                  key={msg.id}
+                  onClick={() => msg.navigatePath && navigate(msg.navigatePath)}
+                  className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <div className={
+                    msg.type === 'warning' 
+                      ? 'w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0'
+                      : msg.type === 'reminder'
+                      ? 'w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0'
+                      : 'w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0'
+                  }>
+                    {msg.type === 'warning' ? (
+                      <AlertTriangle className="w-4 h-4 text-red-600" />
+                    ) : msg.type === 'reminder' ? (
+                      <Clock className="w-4 h-4 text-orange-600" />
+                    ) : (
+                      <Bell className="w-4 h-4 text-blue-600" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{msg.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{msg.content}</p>
+                    <p className="text-xs text-gray-400 mt-1">{formatRelativeTime(msg.createTime)}</p>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Plus, 
   Search, 
@@ -24,7 +25,9 @@ import {
   FileText,
   UserPlus,
   Handshake,
-  ChevronRight
+  ChevronRight,
+  Home,
+  Bell
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { CLUE_TYPES, RISK_LEVELS, CLUE_STATUS, AREAS, GRID_WORKERS, MEDIATORS } from '@/utils/constants';
@@ -87,6 +90,7 @@ const Timeline = ({ records }: { records: TimelineRecord[] }) => (
 );
 
 export default function Clues() {
+  const navigate = useNavigate();
   const { 
     clues, 
     addClue, 
@@ -95,6 +99,9 @@ export default function Clues() {
     mergeClues,
     createVisitFromClue,
     createMediationFromClue,
+    getVisitsByClueId,
+    getMediationsByClueId,
+    getMessagesByRelatedId,
     user
   } = useAppStore();
   const [showModal, setShowModal] = useState(false);
@@ -780,6 +787,103 @@ export default function Clues() {
                   </div>
                 </div>
               )}
+
+              <div>
+                <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
+                  <Link className="w-4 h-4" />
+                  办理跟踪
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div 
+                    onClick={() => { setShowDetail(false); navigate('/visits'); }}
+                    className="p-4 bg-green-50 rounded-xl cursor-pointer hover:bg-green-100 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                          <Home className="w-4 h-4 text-green-600" />
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">走访任务</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-green-200 text-green-700 text-xs rounded-full">
+                        {getVisitsByClueId(selectedClue.id).length} 条
+                      </span>
+                    </div>
+                    <div className="space-y-2 mt-3">
+                      {getVisitsByClueId(selectedClue.id).slice(0, 2).map(v => (
+                        <div key={v.id} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-700 truncate">{v.title}</span>
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded",
+                            v.status === 'completed' ? 'bg-green-200 text-green-700' :
+                            v.status === 'overdue' ? 'bg-red-200 text-red-700' :
+                            'bg-yellow-200 text-yellow-700'
+                          )}>
+                            {v.statusName}
+                          </span>
+                        </div>
+                      ))}
+                      {getVisitsByClueId(selectedClue.id).length === 0 && (
+                        <p className="text-xs text-gray-400">暂无走访记录</p>
+                      )}
+                    </div>
+                  </div>
+                  <div 
+                    onClick={() => { setShowDetail(false); navigate('/mediation'); }}
+                    className="p-4 bg-orange-50 rounded-xl cursor-pointer hover:bg-orange-100 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
+                          <Handshake className="w-4 h-4 text-orange-600" />
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">调解案件</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-orange-200 text-orange-700 text-xs rounded-full">
+                        {getMediationsByClueId(selectedClue.id).length} 条
+                      </span>
+                    </div>
+                    <div className="space-y-2 mt-3">
+                      {getMediationsByClueId(selectedClue.id).slice(0, 2).map(m => (
+                        <div key={m.id} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-700 truncate">{m.title}</span>
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded",
+                            m.result === 'success' ? 'bg-green-200 text-green-700' :
+                            m.result === 'escalated' ? 'bg-red-200 text-red-700' :
+                            'bg-blue-200 text-blue-700'
+                          )}>
+                            {m.statusName}
+                          </span>
+                        </div>
+                      ))}
+                      {getMediationsByClueId(selectedClue.id).length === 0 && (
+                        <p className="text-xs text-gray-400">暂无调解记录</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div 
+                  onClick={() => { setShowDetail(false); navigate('/messages'); }}
+                  className="p-4 bg-blue-50 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors mb-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <Bell className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <span className="text-sm font-medium text-gray-900">相关消息</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-blue-200 text-blue-700 text-xs rounded-full">
+                        {getMessagesByRelatedId(selectedClue.id, 'clue').length + 
+                         getVisitsByClueId(selectedClue.id).reduce((sum, v) => sum + getMessagesByRelatedId(v.id, 'visit').length, 0) +
+                         getMediationsByClueId(selectedClue.id).reduce((sum, m) => sum + getMessagesByRelatedId(m.id, 'mediation').length, 0)} 条
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <div>
                 <p className="text-sm text-gray-500 mb-4 flex items-center gap-1">

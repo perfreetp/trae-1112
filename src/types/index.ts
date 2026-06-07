@@ -5,6 +5,16 @@ export type VisitStatus = 'pending' | 'completed' | 'overdue';
 export type MediationStatus = 'assigned' | 'mediating' | 'completed' | 'closed';
 export type MediationResult = 'pending' | 'success' | 'failed' | 'escalated';
 export type MessageType = 'system' | 'task' | 'warning' | 'reminder';
+export type MessageSubType = 
+  | 'visit_assign' 
+  | 'visit_near_deadline' 
+  | 'visit_overdue' 
+  | 'mediation_assign' 
+  | 'mediation_near_deadline' 
+  | 'mediation_overdue' 
+  | 'mediation_escalate' 
+  | 'clue_escalate'
+  | 'system_notice';
 export type Priority = 'low' | 'medium' | 'high';
 export type UserRole = 'admin' | 'grid' | 'mediator';
 export type TimelineActionType = 
@@ -164,6 +174,7 @@ export interface Message {
   id: string;
   type: MessageType;
   typeName: string;
+  subType?: MessageSubType;
   title: string;
   content: string;
   relatedId?: string;
@@ -173,6 +184,7 @@ export interface Message {
   receiver: string;
   isRead: boolean;
   isHandled: boolean;
+  isExpired?: boolean;
   createTime: string;
   priority: Priority;
 }
@@ -208,6 +220,13 @@ export interface DashboardStats {
   highRisk: number;
   overdue: number;
   totalMediation: number;
+  pendingVisits: number;
+  pendingMediations: number;
+  nearDeadlineVisits: number;
+  nearDeadlineMediations: number;
+  overdueVisits: number;
+  overdueMediations: number;
+  unhandledMessages: number;
 }
 
 export interface User {

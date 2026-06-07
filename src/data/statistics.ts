@@ -45,6 +45,13 @@ export const mockDashboardStats: DashboardStats = {
   highRisk: 8,
   overdue: 3,
   totalMediation: 86,
+  pendingVisits: 12,
+  pendingMediations: 8,
+  nearDeadlineVisits: 3,
+  nearDeadlineMediations: 2,
+  overdueVisits: 2,
+  overdueMediations: 1,
+  unhandledMessages: 5,
 };
 
 export const mockMonthlyTrend = {

@@ -10,7 +10,8 @@ import type {
   TimelineRecord,
   TimelineActionType,
   MergedInfo,
-  MessageType
+  MessageType,
+  MessageSubType
 } from '@/types';
 import { mockClues } from '@/data/clues';
 import { mockVisits } from '@/data/visits';
@@ -32,6 +33,18 @@ const actionNames: Record<TimelineActionType, string> = {
   follow_up: '回访登记',
   resolve: '调解成功',
   close: '结案归档',
+};
+
+const messageSubTypeNames: Record<MessageSubType, string> = {
+  visit_assign: '走访派单',
+  visit_near_deadline: '走访临近截止',
+  visit_overdue: '走访已超期',
+  mediation_assign: '调解派单',
+  mediation_near_deadline: '调解临近截止',
+  mediation_overdue: '调解已超期',
+  mediation_escalate: '调解升级上报',
+  clue_escalate: '线索升级上报',
+  system_notice: '系统通知',
 };
 
 interface AppState {
@@ -57,14 +70,22 @@ interface AppState {
   updateMediation: (id: string, data: Partial<Mediation>) => void;
   createVisitFromClue: (clueId: string, visitData: Partial<Visit>, operator: string) => string;
   createMediationFromClue: (clueId: string, mediationData: Partial<Mediation>, operator: string) => string;
+  completeVisit: (visitId: string, data: Partial<Visit>, operator: string) => void;
   addTimelineToClue: (clueId: string, action: TimelineActionType, operator: string, description: string, relatedId?: string, relatedType?: 'clue' | 'visit' | 'mediation') => void;
   addTimelineToVisit: (visitId: string, action: TimelineActionType, operator: string, description: string, relatedId?: string, relatedType?: 'clue' | 'visit' | 'mediation') => void;
   addTimelineToMediation: (mediationId: string, action: TimelineActionType, operator: string, description: string, relatedId?: string, relatedType?: 'clue' | 'visit' | 'mediation') => void;
-  addMessage: (message: Omit<Message, 'id' | 'createTime' | 'isRead' | 'isHandled'>) => void;
+  addMessage: (message: Omit<Message, 'id' | 'createTime' | 'isRead' | 'isHandled' | 'isExpired'>) => void;
   markMessageRead: (id: string) => void;
   markMessageHandled: (id: string) => void;
   markAllMessagesRead: () => void;
   markAllMessagesHandled: () => void;
+  markRelatedMessagesHandled: (relatedId: string, relatedType: 'visit' | 'mediation') => void;
+  markRelatedMessagesExpired: (relatedId: string, relatedType: 'visit' | 'mediation') => void;
+  generateReminderMessages: () => void;
+  getVisitsByClueId: (clueId: string) => Visit[];
+  getMediationsByClueId: (clueId: string) => Mediation[];
+  getMessagesByRelatedId: (relatedId: string, relatedType?: 'clue' | 'visit' | 'mediation') => Message[];
+  refreshDashboardStats: () => void;
 }
 
 const createTimelineRecord = (
@@ -91,6 +112,57 @@ const messageTypeNames: Record<MessageType, string> = {
   reminder: '到期提醒',
 };
 
+const computeDashboardStats = (clues: Clue[], visits: Visit[], mediations: Mediation[], messages: Message[]): DashboardStats => {
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+  const threeDays = 3 * oneDay;
+
+  const nearDeadlineVisits = visits.filter(v => {
+    if (v.status === 'completed' || !v.planDate) return false;
+    const diff = new Date(v.planDate).getTime() - now;
+    return diff > 0 && diff <= threeDays;
+  }).length;
+
+  const overdueVisits = visits.filter(v => {
+    if (v.status === 'completed' || !v.planDate) return false;
+    return new Date(v.planDate).getTime() < now;
+  }).length;
+
+  const nearDeadlineMediations = mediations.filter(m => {
+    if (m.status === 'closed' || m.status === 'completed' || !m.deadline) return false;
+    const diff = new Date(m.deadline).getTime() - now;
+    return diff > 0 && diff <= threeDays;
+  }).length;
+
+  const overdueMediations = mediations.filter(m => {
+    if (m.status === 'closed' || m.status === 'completed' || !m.deadline) return false;
+    return new Date(m.deadline).getTime() < now;
+  }).length;
+
+  return {
+    totalClues: clues.length,
+    pendingClues: clues.filter(c => c.status === 'pending').length,
+    todayNew: clues.filter(c => {
+      const createDate = new Date(c.createTime).toDateString();
+      return createDate === new Date().toDateString();
+    }).length,
+    successRate: mediations.length > 0 
+      ? Math.round((mediations.filter(m => m.result === 'success').length / mediations.length) * 100) 
+      : 0,
+    keyPersons: mockKeyPersons.length,
+    highRisk: clues.filter(c => c.riskLevel === 'high' || c.riskLevel === 'critical').length,
+    overdue: overdueVisits + overdueMediations,
+    totalMediation: mediations.length,
+    pendingVisits: visits.filter(v => v.status === 'pending').length,
+    pendingMediations: mediations.filter(m => m.status === 'assigned' || m.status === 'mediating').length,
+    nearDeadlineVisits,
+    nearDeadlineMediations,
+    overdueVisits,
+    overdueMediations,
+    unhandledMessages: messages.filter(m => !m.isHandled).length,
+  };
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   user: {
     id: '1',
@@ -112,24 +184,31 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentPage: (page) => set({ currentPage: page }),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   
-  addClue: (clue) => set((state) => ({ 
-    clues: [clue, ...state.clues],
-    dashboardStats: {
-      ...state.dashboardStats,
-      totalClues: state.dashboardStats.totalClues + 1,
-      todayNew: state.dashboardStats.todayNew + 1,
-    }
-  })),
+  addClue: (clue) => set((state) => { 
+    const newClues = [clue, ...state.clues];
+    return {
+      clues: newClues,
+      dashboardStats: computeDashboardStats(newClues, state.visits, state.mediations, state.messages),
+    };
+  }),
   
-  updateClue: (id, data) => set((state) => ({
-    clues: state.clues.map((clue) => 
+  updateClue: (id, data) => set((state) => {
+    const newClues = state.clues.map((clue) => 
       clue.id === id ? { ...clue, ...data, updateTime: new Date().toISOString() } : clue
-    ),
-  })),
+    );
+    return {
+      clues: newClues,
+      dashboardStats: computeDashboardStats(newClues, state.visits, state.mediations, state.messages),
+    };
+  }),
   
-  deleteClue: (id) => set((state) => ({
-    clues: state.clues.filter((clue) => clue.id !== id),
-  })),
+  deleteClue: (id) => set((state) => {
+    const newClues = state.clues.filter((clue) => clue.id !== id);
+    return {
+      clues: newClues,
+      dashboardStats: computeDashboardStats(newClues, state.visits, state.mediations, state.messages),
+    };
+  }),
   
   mergeClues: (targetId, sourceIds, operator) => set((state) => {
     const targetClue = state.clues.find(c => c.id === targetId);
@@ -157,50 +236,103 @@ export const useAppStore = create<AppState>((set, get) => ({
       'clue'
     );
     
+    const newClues = state.clues
+      .filter(c => !sourceIds.includes(c.id))
+      .map(clue => 
+        clue.id === targetId 
+          ? {
+              ...clue,
+              description: mergedDescriptions,
+              involvedPersons: mergedInvolved,
+              attachments: mergedAttachments,
+              mergedFrom: sourceIds,
+              mergedInfos,
+              isDuplicate: false,
+              updateTime: new Date().toISOString(),
+              timeline: [...clue.timeline, mergeTimeline],
+            }
+          : clue
+      );
+
     return {
-      clues: state.clues
-        .filter(c => !sourceIds.includes(c.id))
-        .map(clue => 
-          clue.id === targetId 
-            ? {
-                ...clue,
-                description: mergedDescriptions,
-                involvedPersons: mergedInvolved,
-                attachments: mergedAttachments,
-                mergedFrom: sourceIds,
-                mergedInfos,
-                isDuplicate: false,
-                updateTime: new Date().toISOString(),
-                timeline: [...clue.timeline, mergeTimeline],
-              }
-            : clue
-        ),
+      clues: newClues,
+      dashboardStats: computeDashboardStats(newClues, state.visits, state.mediations, state.messages),
     };
   }),
   
-  addVisit: (visit) => set((state) => ({ 
-    visits: [visit, ...state.visits],
-  })),
+  addVisit: (visit) => set((state) => { 
+    const newVisits = [visit, ...state.visits];
+    return {
+      visits: newVisits,
+      dashboardStats: computeDashboardStats(state.clues, newVisits, state.mediations, state.messages),
+    };
+  }),
   
-  updateVisit: (id, data) => set((state) => ({
-    visits: state.visits.map((visit) => 
+  updateVisit: (id, data) => set((state) => {
+    const newVisits = state.visits.map((visit) => 
       visit.id === id ? { ...visit, ...data } : visit
-    ),
-  })),
-  
-  addMediation: (mediation) => set((state) => ({ 
-    mediations: [mediation, ...state.mediations],
-    dashboardStats: {
-      ...state.dashboardStats,
-      totalMediation: state.dashboardStats.totalMediation + 1,
+    );
+    return {
+      visits: newVisits,
+      dashboardStats: computeDashboardStats(state.clues, newVisits, state.mediations, state.messages),
+    };
+  }),
+
+  completeVisit: (visitId, data, operator) => {
+    const state = get();
+    const visit = state.visits.find(v => v.id === visitId);
+    if (!visit) return;
+
+    const record = createTimelineRecord(
+      'complete_visit',
+      operator,
+      `已完成走访，发现问题：${(data.issues || '无').substring(0, 50)}`,
+      visitId,
+      'visit'
+    );
+
+    const newVisits = state.visits.map(v => 
+      v.id === visitId 
+        ? { ...v, ...data, status: 'completed' as const, statusName: '已完成', timeline: [...v.timeline, record] }
+        : v
+    );
+
+    if (visit.clueId) {
+      set((s) => ({
+        clues: s.clues.map(c => 
+          c.id === visit.clueId 
+            ? { ...c, timeline: [...c.timeline, record], updateTime: new Date().toISOString() }
+            : c
+        ),
+      }));
     }
-  })),
+
+    set((s) => ({
+      visits: newVisits,
+      dashboardStats: computeDashboardStats(s.clues, newVisits, s.mediations, s.messages),
+    }));
+
+    get().markRelatedMessagesHandled(visitId, 'visit');
+    get().markRelatedMessagesExpired(visitId, 'visit');
+  },
   
-  updateMediation: (id, data) => set((state) => ({
-    mediations: state.mediations.map((mediation) => 
+  addMediation: (mediation) => set((state) => { 
+    const newMediations = [mediation, ...state.mediations];
+    return {
+      mediations: newMediations,
+      dashboardStats: computeDashboardStats(state.clues, state.visits, newMediations, state.messages),
+    };
+  }),
+  
+  updateMediation: (id, data) => set((state) => {
+    const newMediations = state.mediations.map((mediation) => 
       mediation.id === id ? { ...mediation, ...data } : mediation
-    ),
-  })),
+    );
+    return {
+      mediations: newMediations,
+      dashboardStats: computeDashboardStats(state.clues, state.visits, newMediations, state.messages),
+    };
+  }),
   
   createVisitFromClue: (clueId, visitData, operator) => {
     const state = get();
@@ -238,20 +370,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       'visit'
     );
     
-    set((state) => ({
-      visits: [newVisit, ...state.visits],
-      clues: state.clues.map(c => 
-        c.id === clueId 
-          ? { ...c, status: 'processing', statusName: '处理中', timeline: [...c.timeline, visitTimeline] }
-          : c
-      ),
+    const newVisits = [newVisit, ...state.visits];
+    const newClues = state.clues.map(c => 
+      c.id === clueId 
+        ? { ...c, status: 'processing' as const, statusName: '处理中', timeline: [...c.timeline, visitTimeline] }
+        : c
+    );
+
+    set((s) => ({
+      visits: newVisits,
+      clues: newClues,
+      dashboardStats: computeDashboardStats(newClues, newVisits, s.mediations, s.messages),
     }));
     
     get().addMessage({
       type: 'task',
       typeName: messageTypeNames['task'],
+      subType: 'visit_assign',
       title: '新的走访任务',
-      content: `您有一条新的走访任务：${newVisit.title}`,
+      content: `您有一条新的走访任务：${newVisit.title}，请按时完成。`,
       relatedId: visitId,
       relatedType: 'visit',
       navigatePath: `/visits`,
@@ -304,24 +441,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       'mediation'
     );
     
-    set((state) => ({
-      mediations: [newMediation, ...state.mediations],
-      clues: state.clues.map(c => 
-        c.id === clueId 
-          ? { ...c, status: 'mediating', statusName: '调解中', timeline: [...c.timeline, mediationTimeline] }
-          : c
-      ),
-      dashboardStats: {
-        ...state.dashboardStats,
-        totalMediation: state.dashboardStats.totalMediation + 1,
-      },
+    const newMediations = [newMediation, ...state.mediations];
+    const newClues = state.clues.map(c => 
+      c.id === clueId 
+        ? { ...c, status: 'mediating' as const, statusName: '调解中', timeline: [...c.timeline, mediationTimeline] }
+        : c
+    );
+
+    set((s) => ({
+      mediations: newMediations,
+      clues: newClues,
+      dashboardStats: computeDashboardStats(newClues, s.visits, newMediations, s.messages),
     }));
     
     get().addMessage({
       type: 'task',
       typeName: messageTypeNames['task'],
+      subType: 'mediation_assign',
       title: '新的调解案件',
-      content: `您有一条新的调解案件：${newMediation.title}`,
+      content: `您有一条新的调解案件：${newMediation.title}，请及时处理。`,
       relatedId: mediationId,
       relatedType: 'mediation',
       navigatePath: `/mediation`,
@@ -386,15 +524,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   
-  addMessage: (message) => set((state) => ({
-    messages: [{
+  addMessage: (message) => set((state) => {
+    const newMessages = [{
       ...message,
       id: generateId(),
       createTime: new Date().toISOString(),
       isRead: false,
       isHandled: false,
-    }, ...state.messages],
-  })),
+      isExpired: false,
+    }, ...state.messages];
+    return {
+      messages: newMessages,
+      dashboardStats: computeDashboardStats(state.clues, state.visits, state.mediations, newMessages),
+    };
+  }),
   
   markMessageRead: (id) => set((state) => ({
     messages: state.messages.map((msg) => 
@@ -412,7 +555,164 @@ export const useAppStore = create<AppState>((set, get) => ({
     messages: state.messages.map((msg) => ({ ...msg, isRead: true })),
   })),
   
-  markAllMessagesHandled: () => set((state) => ({
-    messages: state.messages.map((msg) => ({ ...msg, isHandled: true, isRead: true })),
+  markAllMessagesHandled: () => set((state) => {
+    const newMessages = state.messages.map((msg) => ({ ...msg, isHandled: true, isRead: true }));
+    return {
+      messages: newMessages,
+      dashboardStats: computeDashboardStats(state.clues, state.visits, state.mediations, newMessages),
+    };
+  }),
+
+  markRelatedMessagesHandled: (relatedId, relatedType) => set((state) => ({
+    messages: state.messages.map((msg) => 
+      msg.relatedId === relatedId && msg.relatedType === relatedType && !msg.isHandled
+        ? { ...msg, isHandled: true, isRead: true }
+        : msg
+    ),
   })),
+
+  markRelatedMessagesExpired: (relatedId, relatedType) => set((state) => ({
+    messages: state.messages.map((msg) => 
+      msg.relatedId === relatedId && msg.relatedType === relatedType && !msg.isExpired
+        ? { ...msg, isExpired: true }
+        : msg
+    ),
+  })),
+
+  generateReminderMessages: () => {
+    const state = get();
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    const threeDays = 3 * oneDay;
+
+    state.visits.forEach(visit => {
+      if (visit.status === 'completed' || !visit.planDate) return;
+      const planTime = new Date(visit.planDate).getTime();
+      const diff = planTime - now;
+
+      if (diff > 0 && diff <= threeDays) {
+        const existing = state.messages.find(m => 
+          m.relatedId === visit.id && 
+          m.relatedType === 'visit' && 
+          m.subType === 'visit_near_deadline' &&
+          !m.isExpired
+        );
+        if (!existing) {
+          get().addMessage({
+            type: 'reminder',
+            typeName: messageTypeNames['reminder'],
+            subType: 'visit_near_deadline',
+            title: '走访任务临近截止',
+            content: `走访任务「${visit.title}」将于3天内截止，请尽快完成。`,
+            relatedId: visit.id,
+            relatedType: 'visit',
+            navigatePath: `/visits`,
+            sender: '系统',
+            receiver: visit.visitor,
+            priority: 'medium',
+          });
+        }
+      }
+
+      if (diff < 0) {
+        const existing = state.messages.find(m => 
+          m.relatedId === visit.id && 
+          m.relatedType === 'visit' && 
+          m.subType === 'visit_overdue' &&
+          !m.isExpired
+        );
+        if (!existing) {
+          get().addMessage({
+            type: 'warning',
+            typeName: messageTypeNames['warning'],
+            subType: 'visit_overdue',
+            title: '走访任务已超期',
+            content: `走访任务「${visit.title}」已超期，请立即处理。`,
+            relatedId: visit.id,
+            relatedType: 'visit',
+            navigatePath: `/visits`,
+            sender: '系统',
+            receiver: visit.visitor,
+            priority: 'high',
+          });
+        }
+      }
+    });
+
+    state.mediations.forEach(mediation => {
+      if (mediation.status === 'closed' || mediation.status === 'completed' || !mediation.deadline) return;
+      const deadlineTime = new Date(mediation.deadline).getTime();
+      const diff = deadlineTime - now;
+
+      if (diff > 0 && diff <= threeDays) {
+        const existing = state.messages.find(m => 
+          m.relatedId === mediation.id && 
+          m.relatedType === 'mediation' && 
+          m.subType === 'mediation_near_deadline' &&
+          !m.isExpired
+        );
+        if (!existing) {
+          get().addMessage({
+            type: 'reminder',
+            typeName: messageTypeNames['reminder'],
+            subType: 'mediation_near_deadline',
+            title: '调解案件临近截止',
+            content: `调解案件「${mediation.title}」将于3天内截止，请尽快处理。`,
+            relatedId: mediation.id,
+            relatedType: 'mediation',
+            navigatePath: `/mediation`,
+            sender: '系统',
+            receiver: mediation.mediator,
+            priority: 'medium',
+          });
+        }
+      }
+
+      if (diff < 0) {
+        const existing = state.messages.find(m => 
+          m.relatedId === mediation.id && 
+          m.relatedType === 'mediation' && 
+          m.subType === 'mediation_overdue' &&
+          !m.isExpired
+        );
+        if (!existing) {
+          get().addMessage({
+            type: 'warning',
+            typeName: messageTypeNames['warning'],
+            subType: 'mediation_overdue',
+            title: '调解案件已超期',
+            content: `调解案件「${mediation.title}」已超期，请立即处理。`,
+            relatedId: mediation.id,
+            relatedType: 'mediation',
+            navigatePath: `/mediation`,
+            sender: '系统',
+            receiver: mediation.mediator,
+            priority: 'high',
+          });
+        }
+      }
+    });
+  },
+
+  getVisitsByClueId: (clueId) => {
+    return get().visits.filter(v => v.clueId === clueId);
+  },
+
+  getMediationsByClueId: (clueId) => {
+    return get().mediations.filter(m => m.clueId === clueId);
+  },
+
+  getMessagesByRelatedId: (relatedId, relatedType) => {
+    if (relatedType) {
+      return get().messages.filter(m => m.relatedId === relatedId && m.relatedType === relatedType);
+    }
+    return get().messages.filter(m => m.relatedId === relatedId);
+  },
+
+  refreshDashboardStats: () => {
+    const state = get();
+    set({
+      dashboardStats: computeDashboardStats(state.clues, state.visits, state.mediations, state.messages),
+    });
+  },
 }));
