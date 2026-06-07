@@ -1,4 +1,4 @@
-import type { Mediation, MediationStatus, MediationResult } from '@/types';
+import type { Mediation, MediationStatus, MediationResult, RiskLevel } from '@/types';
 import { getDaysAgo, getRandomItem, getRandomInt, generateId } from '@/utils/format';
 import { AREAS, MEDIATORS } from '@/utils/constants';
 
@@ -32,12 +32,14 @@ const persons = ['王某', '李某', '张某', '刘某', '陈某', '杨某', '�
 export const mockMediations: Mediation[] = mediationTitles.map((title, index) => {
   const statuses: MediationStatus[] = ['assigned', 'mediating', 'completed', 'closed'];
   const results: MediationResult[] = ['pending', 'success', 'failed', 'escalated'];
+  const riskLevels: RiskLevel[] = ['low', 'medium', 'high', 'critical'];
   const status = index < 3 ? getRandomItem(['assigned', 'mediating'] as MediationStatus[]) : getRandomItem(statuses);
   const result = status === 'completed' || status === 'closed' 
     ? getRandomItem(['success', 'failed', 'escalated'] as MediationResult[]) 
     : 'pending' as MediationResult;
   const daysAgo = getRandomInt(1, 20);
   const startDate = getDaysAgo(daysAgo);
+  const riskLevel = index < 2 ? 'high' : getRandomItem(riskLevels);
   
   return {
     id: generateId(),
@@ -88,5 +90,6 @@ export const mockMediations: Mediation[] = mediationTitles.map((title, index) =>
     statusName: statusNames[status],
     createTime: startDate.toISOString(),
     area: getRandomItem(AREAS),
+    riskLevel,
   };
 });

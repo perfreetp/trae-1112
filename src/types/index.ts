@@ -92,6 +92,7 @@ export interface Mediation {
   statusName: string;
   createTime: string;
   area: string;
+  riskLevel: RiskLevel;
 }
 
 export interface PersonRecord {

@@ -22,6 +22,8 @@ interface AppState {
   toggleSidebar: () => void;
   addClue: (clue: Clue) => void;
   updateClue: (id: string, data: Partial<Clue>) => void;
+  deleteClue: (id: string) => void;
+  mergeClues: (targetId: string, sourceIds: string[]) => void;
   addVisit: (visit: Visit) => void;
   updateVisit: (id: string, data: Partial<Visit>) => void;
   addMediation: (mediation: Mediation) => void;
@@ -65,6 +67,38 @@ export const useAppStore = create<AppState>((set) => ({
       clue.id === id ? { ...clue, ...data, updateTime: new Date().toISOString() } : clue
     ),
   })),
+  
+  deleteClue: (id) => set((state) => ({
+    clues: state.clues.filter((clue) => clue.id !== id),
+  })),
+  
+  mergeClues: (targetId, sourceIds) => set((state) => {
+    const targetClue = state.clues.find(c => c.id === targetId);
+    if (!targetClue) return state;
+    
+    const sourceClues = state.clues.filter(c => sourceIds.includes(c.id));
+    const mergedDescriptions = [targetClue.description, ...sourceClues.map(c => c.description)].filter(Boolean).join('\n\n---\n\n');
+    const mergedInvolved = [...new Set([...targetClue.involvedPersons, ...sourceClues.flatMap(c => c.involvedPersons)])];
+    const mergedAttachments = [...targetClue.attachments, ...sourceClues.flatMap(c => c.attachments)];
+    
+    return {
+      clues: state.clues
+        .filter(c => !sourceIds.includes(c.id))
+        .map(clue => 
+          clue.id === targetId 
+            ? {
+                ...clue,
+                description: mergedDescriptions,
+                involvedPersons: mergedInvolved,
+                attachments: mergedAttachments,
+                mergedFrom: sourceIds,
+                isDuplicate: false,
+                updateTime: new Date().toISOString(),
+              }
+            : clue
+        ),
+    };
+  }),
   
   addVisit: (visit) => set((state) => ({ 
     visits: [visit, ...state.visits],

@@ -1,11 +1,10 @@
-import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { useAppStore } from '@/store';
 import { cn } from '@/utils/format';
 
 interface LayoutProps {
-  children?: React.ReactNode;
+  children: React.ReactNode;
 }
 
 export default function Layout({ children }: LayoutProps) {
@@ -20,7 +19,7 @@ export default function Layout({ children }: LayoutProps) {
         sidebarCollapsed ? "ml-16" : "ml-60"
       )}>
         <div className="p-6">
-          <Outlet />
+          {children}
         </div>
       </main>
     </div>

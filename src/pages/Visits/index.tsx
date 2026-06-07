@@ -3,54 +3,120 @@ import {
   Plus, 
   Search, 
   Calendar, 
-  User, 
-  MapPin, 
-  CheckCircle, 
   Clock, 
+  CheckCircle, 
   AlertTriangle,
-  Camera,
   Eye,
   Edit,
-  XCircle
+  XCircle,
+  Camera,
+  X,
+  MapPin,
+  User,
+  FileText,
+  Save
 } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { VISIT_STATUS, AREAS, GRID_WORKERS } from '@/utils/constants';
-import { formatDate } from '@/utils/format';
-import { cn, generateId } from '@/utils/format';
+import { AREAS, GRID_WORKERS } from '@/utils/constants';
+import { formatDate, cn, generateId } from '@/utils/format';
+import type { Visit } from '@/types';
+
+const statusMap: Record<string, { label: string; color: string; bgColor: string }> = {
+  pending: { label: '待走访', color: 'text-orange-600', bgColor: 'bg-orange-50' },
+  completed: { label: '已完成', color: 'text-green-600', bgColor: 'bg-green-50' },
+  overdue: { label: '已超期', color: 'text-red-600', bgColor: 'bg-red-50' },
+};
 
 export default function Visits() {
-  const { visits, addVisit } = useAppStore();
+  const { visits, addVisit, updateVisit } = useAppStore();
   const [showModal, setShowModal] = useState(false);
-  const [searchText, setSearchText] = useState('');
+  const [showDetail, setShowDetail] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [searchText, setSearchText] = useState('');
+  const [editForm, setEditForm] = useState({
+    actualDate: '',
+    content: '',
+    issues: '',
+    photos: [] as string[],
+  });
   const [newVisit, setNewVisit] = useState({
     planDate: '',
-    visitor: GRID_WORKERS[0],
     visitedPerson: '',
     visitedAddress: '',
     area: AREAS[0],
+    visitor: GRID_WORKERS[0],
     purpose: '',
   });
 
   const filteredVisits = visits.filter(visit => {
-    const matchSearch = visit.visitedPerson.includes(searchText) || 
-                        visit.visitedAddress.includes(searchText) ||
-                        visit.purpose.includes(searchText);
+    const matchSearch = visit.visitedPerson.includes(searchText) || visit.visitedAddress.includes(searchText);
     const matchStatus = filterStatus === 'all' || visit.status === filterStatus;
     return matchSearch && matchStatus;
   });
 
   const stats = {
+    total: visits.length,
     pending: visits.filter(v => v.status === 'pending').length,
     completed: visits.filter(v => v.status === 'completed').length,
     overdue: visits.filter(v => v.status === 'overdue').length,
   };
 
-  const handleSubmit = () => {
-    if (!newVisit.visitedPerson.trim() || !newVisit.planDate) return;
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const newPhotos = Array.from(files).map(() => 
+        `https://picsum.photos/400/300?random=${generateId()}`
+      );
+      if (isEdit) {
+        setEditForm({ ...editForm, photos: [...editForm.photos, ...newPhotos] });
+      }
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setEditForm({ 
+      ...editForm, 
+      photos: editForm.photos.filter((_, i) => i !== index) 
+    });
+  };
+
+  const openEdit = (visit: Visit) => {
+    setSelectedVisit(visit);
+    setEditForm({
+      actualDate: visit.actualDate || new Date().toISOString().split('T')[0],
+      content: visit.content || '',
+      issues: visit.issues || '',
+      photos: visit.photos || [],
+    });
+    setShowEdit(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!selectedVisit) return;
+    updateVisit(selectedVisit.id, {
+      actualDate: new Date(editForm.actualDate).toISOString(),
+      content: editForm.content,
+      issues: editForm.issues,
+      photos: editForm.photos,
+      status: 'completed',
+      statusName: '已完成',
+    });
+    setShowEdit(false);
+    setSelectedVisit(null);
+  };
+
+  const handleAddVisit = () => {
+    if (!newVisit.planDate || !newVisit.visitedPerson) return;
     addVisit({
       id: generateId(),
-      ...newVisit,
+      planDate: new Date(newVisit.planDate).toISOString(),
+      visitor: newVisit.visitor,
+      visitedPerson: newVisit.visitedPerson,
+      visitedAddress: newVisit.visitedAddress,
+      area: newVisit.area,
+      purpose: newVisit.purpose,
       content: '',
       photos: [],
       issues: '',
@@ -61,10 +127,10 @@ export default function Visits() {
     setShowModal(false);
     setNewVisit({
       planDate: '',
-      visitor: GRID_WORKERS[0],
       visitedPerson: '',
       visitedAddress: '',
       area: AREAS[0],
+      visitor: GRID_WORKERS[0],
       purpose: '',
     });
   };
@@ -74,219 +140,220 @@ export default function Visits() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">入户走访</h1>
-          <p className="text-gray-500 mt-1">管理走访任务和记录</p>
+          <p className="text-gray-500 mt-1">管理走访计划和走访记录</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
           className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/25"
         >
           <Plus className="w-4 h-4" />
-          新增走访
+          新增走访计划
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center">
-            <Clock className="w-6 h-6 text-yellow-600" />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-500">总走访数</p>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Calendar className="w-5 h-5 text-blue-600" />
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
+          <p className="text-3xl font-bold text-gray-900">{stats.total}</p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-gray-500">待走访</p>
+            <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-orange-600" />
+            </div>
           </div>
+          <p className="text-3xl font-bold text-orange-600">{stats.pending}</p>
         </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center">
-            <CheckCircle className="w-6 h-6 text-green-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900">{stats.completed}</p>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-gray-500">已完成</p>
+            <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            </div>
           </div>
+          <p className="text-3xl font-bold text-green-600">{stats.completed}</p>
         </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
-            <AlertTriangle className="w-6 h-6 text-red-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900">{stats.overdue}</p>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-gray-500">已超期</p>
+            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
           </div>
+          <p className="text-3xl font-bold text-red-600">{stats.overdue}</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="搜索走访对象、地址、目的..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div className="flex gap-3">
-            {['all', 'pending', 'completed', 'overdue'].map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={cn(
-                  "px-4 py-2 rounded-xl text-sm font-medium transition-colors",
-                  filterStatus === status
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                )}
-              >
-                {status === 'all' ? '全部' : VISIT_STATUS[status as keyof typeof VISIT_STATUS].label}
-              </button>
-            ))}
-          </div>
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="flex-1 relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="搜索走访对象、地址..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        <div className="flex gap-2">
+          {['all', 'pending', 'completed', 'overdue'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilterStatus(status)}
+              className={cn(
+                "px-4 py-2.5 rounded-xl text-sm font-medium transition-colors",
+                filterStatus === status
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+              )}
+            >
+              {status === 'all' ? '全部' : statusMap[status].label}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredVisits.map((visit) => (
-          <div 
-            key={visit.id}
-            className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow"
-          >
+          <div key={visit.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center",
-                  visit.status === 'completed' ? 'bg-green-100' : visit.status === 'overdue' ? 'bg-red-100' : 'bg-yellow-100'
-                )}>
-                  <User className={cn(
-                    "w-5 h-5",
-                    visit.status === 'completed' ? 'text-green-600' : visit.status === 'overdue' ? 'text-red-600' : 'text-yellow-600'
-                  )} />
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                  {visit.visitedPerson.charAt(0)}
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">{visit.visitedPerson}</p>
-                  <p className="text-xs text-gray-500">{visit.area}</p>
+                  <h4 className="font-semibold text-gray-900">{visit.visitedPerson}</h4>
+                  <p className="text-sm text-gray-500">{visit.area}</p>
                 </div>
               </div>
               <span className={cn(
                 "px-2.5 py-1 text-xs font-medium rounded-full",
-                VISIT_STATUS[visit.status].bgColor,
-                VISIT_STATUS[visit.status].color
+                statusMap[visit.status].bgColor,
+                statusMap[visit.status].color
               )}>
-                {VISIT_STATUS[visit.status].label}
+                {visit.statusName}
               </span>
             </div>
-            
-            <div className="space-y-2.5 mb-4">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2 text-gray-600">
                 <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span className="truncate">{visit.visitedAddress}</span>
               </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <span>计划：{formatDate(visit.planDate)}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600">
                 <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span>走访人：{visit.visitor}</span>
               </div>
-            </div>
-
-            <div className="p-3 bg-gray-50 rounded-xl mb-4">
-              <p className="text-xs text-gray-500 mb-1">走访目的</p>
-              <p className="text-sm text-gray-700">{visit.purpose}</p>
-            </div>
-
-            {visit.status === 'completed' && visit.content && (
-              <div className="p-3 bg-green-50 rounded-xl mb-4">
-                <p className="text-xs text-green-600 mb-1">走访记录</p>
-                <p className="text-sm text-gray-700 line-clamp-2">{visit.content}</p>
+              <div className="flex items-center gap-2 text-gray-600">
+                <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span>计划：{formatDate(visit.planDate)}</span>
               </div>
-            )}
+              {visit.actualDate && (
+                <div className="flex items-center gap-2 text-gray-600">
+                  <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  <span>实际：{formatDate(visit.actualDate)}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-gray-600">
+                <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="truncate">{visit.purpose || '未填写目的'}</span>
+              </div>
+            </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-              <div className="flex items-center gap-1 text-xs text-gray-400">
-                {visit.photos.length > 0 && (
-                  <div className="flex items-center gap-1">
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>{visit.photos.length}张照片</span>
+            {visit.photos && visit.photos.length > 0 && (
+              <div className="mt-4 flex gap-2">
+                {visit.photos.slice(0, 3).map((photo, idx) => (
+                  <div key={idx} className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100">
+                    <img src={photo} alt="" className="w-full h-full object-cover" />
+                  </div>
+                ))}
+                {visit.photos.length > 3 && (
+                  <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-sm text-gray-500">
+                    +{visit.photos.length - 3}
                   </div>
                 )}
               </div>
-              <div className="flex gap-1">
-                <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                  <Eye className="w-4 h-4" />
-                </button>
-                <button className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+            )}
+
+            <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setSelectedVisit(visit); setShowDetail(true); }}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+                查看
+              </button>
+              {visit.status !== 'completed' && (
+                <button
+                  onClick={() => openEdit(visit)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                >
                   <Edit className="w-4 h-4" />
+                  录入结果
                 </button>
-              </div>
+              )}
             </div>
           </div>
         ))}
       </div>
 
       {filteredVisits.length === 0 && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 py-12 text-center">
-          <XCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">暂无匹配的走访记录</p>
+        <div className="py-16 text-center bg-white rounded-2xl border border-gray-100">
+          <Calendar className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+          <p className="text-gray-500">暂无走访记录</p>
         </div>
       )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">新增走访计划</h3>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">计划日期 *</label>
-                  <input
-                    type="date"
-                    value={newVisit.planDate}
-                    onChange={(e) => setNewVisit({ ...newVisit, planDate: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">走访人</label>
-                  <select
-                    value={newVisit.visitor}
-                    onChange={(e) => setNewVisit({ ...newVisit, visitor: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {GRID_WORKERS.map(w => <option key={w} value={w}>{w}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">走访对象 *</label>
-                  <input
-                    type="text"
-                    value={newVisit.visitedPerson}
-                    onChange={(e) => setNewVisit({ ...newVisit, visitedPerson: e.target.value })}
-                    placeholder="请输入姓名"
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">所属区域</label>
-                  <select
-                    value={newVisit.area}
-                    onChange={(e) => setNewVisit({ ...newVisit, area: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">走访对象 *</label>
+                <input
+                  type="text"
+                  value={newVisit.visitedPerson}
+                  onChange={(e) => setNewVisit({ ...newVisit, visitedPerson: e.target.value })}
+                  placeholder="请输入走访对象姓名"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">详细地址</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">计划走访日期 *</label>
+                <input
+                  type="date"
+                  value={newVisit.planDate}
+                  onChange={(e) => setNewVisit({ ...newVisit, planDate: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">所属区域</label>
+                <select
+                  value={newVisit.area}
+                  onChange={(e) => setNewVisit({ ...newVisit, area: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {AREAS.map((area) => (
+                    <option key={area} value={area}>{area}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">走访地址</label>
                 <input
                   type="text"
                   value={newVisit.visitedAddress}
@@ -294,6 +361,18 @@ export default function Visits() {
                   placeholder="请输入详细地址"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">走访人</label>
+                <select
+                  value={newVisit.visitor}
+                  onChange={(e) => setNewVisit({ ...newVisit, visitor: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {GRID_WORKERS.map((worker) => (
+                    <option key={worker} value={worker}>{worker}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">走访目的</label>
@@ -306,7 +385,7 @@ export default function Visits() {
                 />
               </div>
             </div>
-            <div className="bg-gray-50 border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
                 className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
@@ -314,10 +393,203 @@ export default function Visits() {
                 取消
               </button>
               <button
-                onClick={handleSubmit}
+                onClick={handleAddVisit}
                 className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
               >
-                创建
+                创建计划
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetail && selectedVisit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowDetail(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">走访详情</h3>
+              <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-2xl">
+                  {selectedVisit.visitedPerson.charAt(0)}
+                </div>
+                <div>
+                  <h4 className="text-xl font-semibold text-gray-900">{selectedVisit.visitedPerson}</h4>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className={cn(
+                      "px-2.5 py-1 text-xs font-medium rounded-full",
+                      statusMap[selectedVisit.status].bgColor,
+                      statusMap[selectedVisit.status].color
+                    )}>
+                      {selectedVisit.statusName}
+                    </span>
+                    <span className="text-sm text-gray-500">{selectedVisit.area}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">走访地址</p>
+                  <p className="text-sm font-medium text-gray-900">{selectedVisit.visitedAddress}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">走访人</p>
+                  <p className="text-sm font-medium text-gray-900">{selectedVisit.visitor}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">计划走访日期</p>
+                  <p className="text-sm font-medium text-gray-900">{formatDate(selectedVisit.planDate)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">实际走访日期</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {selectedVisit.actualDate ? formatDate(selectedVisit.actualDate) : '未走访'}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500 mb-2">走访目的</p>
+                <div className="p-4 bg-gray-50 rounded-xl text-sm text-gray-700">
+                  {selectedVisit.purpose || '未填写'}
+                </div>
+              </div>
+
+              {selectedVisit.content && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">走访记录</p>
+                  <div className="p-4 bg-blue-50 rounded-xl text-sm text-gray-700">
+                    {selectedVisit.content}
+                  </div>
+                </div>
+              )}
+
+              {selectedVisit.issues && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">发现问题</p>
+                  <div className="p-4 bg-orange-50 rounded-xl text-sm text-gray-700">
+                    {selectedVisit.issues}
+                  </div>
+                </div>
+              )}
+
+              {selectedVisit.photos && selectedVisit.photos.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                    <Camera className="w-4 h-4" />
+                    现场照片（{selectedVisit.photos.length}张）
+                  </p>
+                  <div className="grid grid-cols-4 gap-3">
+                    {selectedVisit.photos.map((photo, index) => (
+                      <div key={index} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
+                        <img src={photo} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEdit && selectedVisit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowEdit(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">录入走访结果</h3>
+              <button onClick={() => setShowEdit(false)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <p className="text-sm text-blue-700">
+                  <strong>走访对象：</strong>{selectedVisit.visitedPerson}
+                  <span className="mx-3">|</span>
+                  <strong>计划日期：</strong>{formatDate(selectedVisit.planDate)}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">实际走访日期 *</label>
+                <input
+                  type="date"
+                  value={editForm.actualDate}
+                  onChange={(e) => setEditForm({ ...editForm, actualDate: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">走访记录 *</label>
+                <textarea
+                  value={editForm.content}
+                  onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
+                  placeholder="请详细记录走访情况、沟通内容、当事人态度等"
+                  rows={5}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">发现问题</label>
+                <textarea
+                  value={editForm.issues}
+                  onChange={(e) => setEditForm({ ...editForm, issues: e.target.value })}
+                  placeholder="请记录走访中发现的问题，如无问题可填'无'"
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">现场照片</label>
+                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4">
+                  <div className="flex flex-wrap gap-3 mb-3">
+                    {editForm.photos.map((photo, index) => (
+                      <div key={index} className="relative w-20 h-20 rounded-lg overflow-hidden bg-gray-100">
+                        <img src={photo} alt="" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(index)}
+                          className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                    <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                      <Camera className="w-6 h-6 text-gray-400 mb-1" />
+                      <span className="text-xs text-gray-400">添加照片</span>
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handlePhotoUpload(e, true)} />
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-400">支持 JPG、PNG 格式，最多上传 9 张</p>
+                </div>
+              </div>
+            </div>
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowEdit(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={!editForm.content.trim()}
+                className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                保存并完成
               </button>
             </div>
           </div>
