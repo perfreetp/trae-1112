@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Bell, 
   ClipboardList, 
@@ -9,7 +10,8 @@ import {
   Eye,
   Trash2,
   Filter,
-  Search
+  Search,
+  ExternalLink
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { MESSAGE_TYPES } from '@/utils/constants';
@@ -23,7 +25,8 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 export default function Messages() {
-  const { messages, markMessageRead, markAllMessagesRead } = useAppStore();
+  const navigate = useNavigate();
+  const { messages, markMessageRead, markAllMessagesRead, markMessageHandled, markAllMessagesHandled } = useAppStore();
   const [filterType, setFilterType] = useState('all');
   const [searchText, setSearchText] = useState('');
 
@@ -34,6 +37,21 @@ export default function Messages() {
   });
 
   const unreadCount = messages.filter(m => !m.isRead).length;
+  const unhandledCount = messages.filter(m => !m.isHandled).length;
+
+  const handleMessageClick = (message: any) => {
+    if (!message.isRead) {
+      markMessageRead(message.id);
+    }
+    if (message.navigatePath) {
+      navigate(message.navigatePath);
+    }
+  };
+
+  const handleMarkHandled = (e: React.MouseEvent, messageId: string) => {
+    e.stopPropagation();
+    markMessageHandled(messageId);
+  };
 
   return (
     <div className="space-y-6">
@@ -46,12 +64,22 @@ export default function Messages() {
           <span className="px-3 py-1.5 bg-red-50 text-red-600 text-sm font-medium rounded-full">
             {unreadCount} 条未读
           </span>
+          <span className="px-3 py-1.5 bg-orange-50 text-orange-600 text-sm font-medium rounded-full">
+            {unhandledCount} 条待处理
+          </span>
           <button
             onClick={markAllMessagesRead}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
           >
             <CheckCheck className="w-4 h-4" />
             全部已读
+          </button>
+          <button
+            onClick={markAllMessagesHandled}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
+          >
+            <Check className="w-4 h-4" />
+            全部已处理
           </button>
         </div>
       </div>
@@ -100,10 +128,11 @@ export default function Messages() {
               return (
                 <div
                   key={message.id}
-                  onClick={() => !message.isRead && markMessageRead(message.id)}
+                  onClick={() => handleMessageClick(message)}
                   className={cn(
                     "p-5 cursor-pointer transition-colors hover:bg-gray-50",
-                    !message.isRead && "bg-blue-50/30"
+                    !message.isRead && "bg-blue-50/30",
+                    message.isHandled && "opacity-75"
                   )}
                 >
                   <div className="flex items-start gap-4">
@@ -124,7 +153,7 @@ export default function Messages() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h4 className={cn(
                             "font-medium",
                             message.isRead ? "text-gray-600" : "text-gray-900"
@@ -137,6 +166,18 @@ export default function Messages() {
                           {message.priority === 'high' && (
                             <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded font-medium">
                               高优先级
+                            </span>
+                          )}
+                          {message.isHandled && (
+                            <span className="px-1.5 py-0.5 bg-green-100 text-green-600 text-xs rounded font-medium flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              已处理
+                            </span>
+                          )}
+                          {message.navigatePath && (
+                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded font-medium flex items-center gap-1">
+                              <ExternalLink className="w-3 h-3" />
+                              可跳转
                             </span>
                           )}
                         </div>
@@ -154,15 +195,34 @@ export default function Messages() {
                         <div className="flex items-center gap-4 text-xs text-gray-400">
                           <span>发件人：{message.sender}</span>
                           <span>{formatDateTime(message.createTime)}</span>
+                          {message.relatedType && (
+                            <span className="px-2 py-0.5 bg-gray-100 rounded">
+                              关联：{message.relatedType === 'clue' ? '线索' : message.relatedType === 'visit' ? '走访' : '调解'}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
-                          <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleMessageClick(message); }}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="查看详情"
+                          >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                          {!message.isHandled && (
+                            <button 
+                              onClick={(e) => handleMarkHandled(e, message.id)}
+                              className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                              title="标记已处理"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button 
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="删除"
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>

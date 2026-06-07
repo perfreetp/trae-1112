@@ -14,12 +14,57 @@ import {
   MapPin,
   User,
   FileText,
-  Save
+  Save,
+  Link,
+  Handshake
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { AREAS, GRID_WORKERS } from '@/utils/constants';
 import { formatDate, cn, generateId } from '@/utils/format';
-import type { Visit } from '@/types';
+import type { Visit, TimelineRecord } from '@/types';
+
+const getTimelineIcon = (action: string) => {
+  switch (action) {
+    case 'register': return <FileText className="w-4 h-4" />;
+    case 'create_visit': return <User className="w-4 h-4" />;
+    case 'complete_visit': return <CheckCircle className="w-4 h-4" />;
+    case 'create_mediation': return <Handshake className="w-4 h-4" />;
+    default: return <Clock className="w-4 h-4" />;
+  }
+};
+
+const getTimelineColor = (action: string) => {
+  switch (action) {
+    case 'register': return 'bg-blue-500';
+    case 'create_visit': return 'bg-green-500';
+    case 'complete_visit': return 'bg-green-600';
+    case 'create_mediation': return 'bg-orange-500';
+    default: return 'bg-gray-400';
+  }
+};
+
+const Timeline = ({ records }: { records: TimelineRecord[] }) => (
+  <div className="space-y-4">
+    {records.slice().reverse().map((record, idx) => (
+      <div key={record.id} className="flex gap-4">
+        <div className="flex flex-col items-center">
+          <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-white flex-shrink-0", getTimelineColor(record.action))}>
+            {getTimelineIcon(record.action)}
+          </div>
+          {idx < records.length - 1 && <div className="w-0.5 flex-1 bg-gray-200 mt-1" />}
+        </div>
+        <div className="flex-1 pb-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium text-gray-900">{record.actionName}</span>
+            <span className="text-xs text-gray-400">{formatDate(record.time)}</span>
+          </div>
+          <p className="text-sm text-gray-600">{record.description}</p>
+          <p className="text-xs text-gray-400 mt-1">操作人：{record.operator}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 const statusMap: Record<string, { label: string; color: string; bgColor: string }> = {
   pending: { label: '待走访', color: 'text-orange-600', bgColor: 'bg-orange-50' },
@@ -28,7 +73,7 @@ const statusMap: Record<string, { label: string; color: string; bgColor: string 
 };
 
 export default function Visits() {
-  const { visits, addVisit, updateVisit } = useAppStore();
+  const { visits, addVisit, updateVisit, user, addTimelineToVisit, clues } = useAppStore();
   const [showModal, setShowModal] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -63,15 +108,20 @@ export default function Visits() {
     overdue: visits.filter(v => v.status === 'overdue').length,
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      const newPhotos = Array.from(files).map(() => 
-        `https://picsum.photos/400/300?random=${generateId()}`
-      );
-      if (isEdit) {
-        setEditForm({ ...editForm, photos: [...editForm.photos, ...newPhotos] });
-      }
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setEditForm(prev => ({ 
+            ...prev, 
+            photos: [...prev.photos, result] 
+          }));
+        };
+        reader.readAsDataURL(file);
+      });
     }
   };
 
@@ -103,6 +153,12 @@ export default function Visits() {
       status: 'completed',
       statusName: '已完成',
     });
+    addTimelineToVisit(
+      selectedVisit.id, 
+      'complete_visit', 
+      user.name, 
+      `完成走访，记录：${editForm.content.substring(0, 50)}...`
+    );
     setShowEdit(false);
     setSelectedVisit(null);
   };
@@ -111,6 +167,7 @@ export default function Visits() {
     if (!newVisit.planDate || !newVisit.visitedPerson) return;
     addVisit({
       id: generateId(),
+      title: `${newVisit.purpose || '入户走访'} - ${newVisit.visitedPerson}`,
       planDate: new Date(newVisit.planDate).toISOString(),
       visitor: newVisit.visitor,
       visitedPerson: newVisit.visitedPerson,
@@ -123,6 +180,14 @@ export default function Visits() {
       status: 'pending',
       statusName: '待走访',
       createTime: new Date().toISOString(),
+      timeline: [{
+        id: generateId(),
+        time: new Date().toISOString(),
+        action: 'create_visit',
+        actionName: '创建走访',
+        operator: user.name,
+        description: `创建走访计划：${newVisit.purpose || '入户走访'}`,
+      }],
     });
     setShowModal(false);
     setNewVisit({
@@ -133,6 +198,11 @@ export default function Visits() {
       visitor: GRID_WORKERS[0],
       purpose: '',
     });
+  };
+
+  const getRelatedClue = (clueId?: string) => {
+    if (!clueId) return null;
+    return clues.find(c => c.id === clueId);
   };
 
   return (
@@ -242,6 +312,12 @@ export default function Visits() {
             </div>
 
             <div className="space-y-3 text-sm">
+              {visit.clueTitle && (
+                <div className="flex items-center gap-2 text-blue-600">
+                  <Link className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate text-xs">来源：{visit.clueTitle}</span>
+                </div>
+              )}
               <div className="flex items-center gap-2 text-gray-600">
                 <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span className="truncate">{visit.visitedAddress}</span>
@@ -406,12 +482,23 @@ export default function Visits() {
       {showDetail && selectedVisit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowDetail(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
               <h3 className="text-lg font-semibold text-gray-900">走访详情</h3>
-              <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedVisit.status !== 'completed' && (
+                  <button
+                    onClick={() => { setShowDetail(false); openEdit(selectedVisit); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm"
+                  >
+                    <Edit className="w-4 h-4" />
+                    录入结果
+                  </button>
+                )}
+                <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600">
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <div className="p-6 space-y-6">
               <div className="flex items-center gap-4">
@@ -432,6 +519,16 @@ export default function Visits() {
                   </div>
                 </div>
               </div>
+
+              {selectedVisit.clueId && (
+                <div className="p-3 bg-blue-50 rounded-xl">
+                  <div className="flex items-center gap-2 text-blue-700">
+                    <Link className="w-4 h-4" />
+                    <span className="text-sm font-medium">关联线索：</span>
+                    <span className="text-sm">{getRelatedClue(selectedVisit.clueId)?.title || selectedVisit.clueTitle}</span>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -485,7 +582,7 @@ export default function Visits() {
                     <Camera className="w-4 h-4" />
                     现场照片（{selectedVisit.photos.length}张）
                   </p>
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
                     {selectedVisit.photos.map((photo, index) => (
                       <div key={index} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
                         <img src={photo} alt="" className="w-full h-full object-cover" />
@@ -494,6 +591,14 @@ export default function Visits() {
                   </div>
                 </div>
               )}
+
+              <div>
+                <p className="text-sm text-gray-500 mb-4 flex items-center gap-1">
+                  <Clock className="w-4 h-4" />
+                  处理时间轴
+                </p>
+                <Timeline records={selectedVisit.timeline || []} />
+              </div>
             </div>
           </div>
         </div>
@@ -569,7 +674,7 @@ export default function Visits() {
                     <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
                       <Camera className="w-6 h-6 text-gray-400 mb-1" />
                       <span className="text-xs text-gray-400">添加照片</span>
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handlePhotoUpload(e, true)} />
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
                     </label>
                   </div>
                   <p className="text-xs text-gray-400">支持 JPG、PNG 格式，最多上传 9 张</p>

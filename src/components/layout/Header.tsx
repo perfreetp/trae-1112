@@ -1,11 +1,12 @@
 import { Bell, Search, User, Settings, LogOut, ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/utils/format';
 import { formatRelativeTime } from '@/utils/format';
 
 export function Header() {
+  const navigate = useNavigate();
   const { user, messages, sidebarCollapsed, markMessageRead } = useAppStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -72,7 +73,13 @@ export function Header() {
                   unreadMessages.map((msg) => (
                     <div
                       key={msg.id}
-                      onClick={() => markMessageRead(msg.id)}
+                      onClick={() => {
+                        markMessageRead(msg.id);
+                        if (msg.navigatePath) {
+                          navigate(msg.navigatePath);
+                          setShowNotifications(false);
+                        }
+                      }}
                       className="px-4 py-3 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
                     >
                       <div className="flex items-start gap-3">

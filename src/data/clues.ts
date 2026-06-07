@@ -1,4 +1,4 @@
-import type { Clue, ClueType, RiskLevel, ClueStatus } from '@/types';
+import type { Clue, ClueType, RiskLevel, ClueStatus, TimelineRecord } from '@/types';
 import { getDaysAgo, getRandomItem, getRandomInt, generateId } from '@/utils/format';
 import { CLUE_TYPES, AREAS, GRID_WORKERS } from '@/utils/constants';
 
@@ -59,6 +59,49 @@ export const mockClues: Clue[] = clueTitles.map((title, index) => {
   const daysAgo = getRandomInt(0, 30);
   const createDate = getDaysAgo(daysAgo);
   const riskLevel = getRandomItem(riskLevels);
+  const reporter = getRandomItem(GRID_WORKERS);
+  
+  const timeline: TimelineRecord[] = [{
+    id: generateId(),
+    time: createDate.toISOString(),
+    action: 'register',
+    actionName: '线索登记',
+    operator: reporter,
+    description: `网格员上报线索：${title}`,
+  }];
+  
+  if (status === 'processing' || status === 'mediating' || status === 'resolved') {
+    timeline.push({
+      id: generateId(),
+      time: getDaysAgo(daysAgo - 1).toISOString(),
+      action: 'create_visit',
+      actionName: '发起走访',
+      operator: getRandomItem(GRID_WORKERS),
+      description: '已安排网格员入户走访核实情况',
+    });
+  }
+  
+  if (status === 'mediating' || status === 'resolved') {
+    timeline.push({
+      id: generateId(),
+      time: getDaysAgo(daysAgo - 3).toISOString(),
+      action: 'create_mediation',
+      actionName: '转入调解',
+      operator: '综治中心',
+      description: '已转入调解程序，安排调解员跟进',
+    });
+  }
+  
+  if (status === 'resolved') {
+    timeline.push({
+      id: generateId(),
+      time: getDaysAgo(daysAgo - 5).toISOString(),
+      action: 'resolve',
+      actionName: '调解成功',
+      operator: getRandomItem(GRID_WORKERS),
+      description: '双方达成一致，纠纷成功化解',
+    });
+  }
   
   return {
     id: generateId(),
@@ -68,14 +111,16 @@ export const mockClues: Clue[] = clueTitles.map((title, index) => {
     description: `${title}，双方各执一词，情绪较为激动，需要社区介入调解。涉及多方利益，情况较为复杂，建议尽快处理。`,
     location: getRandomItem(locations),
     area: getRandomItem(AREAS),
+    latitude: 30.2741 + Math.random() * 0.1,
+    longitude: 120.1551 + Math.random() * 0.1,
     involvedPersons: [getRandomItem(persons), getRandomItem(persons)],
-    reporter: getRandomItem(GRID_WORKERS),
+    reporter,
     reporterPhone: `138${getRandomInt(10000000, 99999999)}`,
     riskLevel,
     status,
     statusName: statusNames[status],
     createTime: createDate.toISOString(),
-    updateTime: createDate.toISOString(),
+    updateTime: getDaysAgo(daysAgo - 5).toISOString(),
     assignee: status !== 'pending' ? getRandomItem(GRID_WORKERS) : undefined,
     deadline: status !== 'resolved' && status !== 'closed' 
       ? getDaysAgo(-getRandomInt(1, 7)).toISOString() 
@@ -83,5 +128,6 @@ export const mockClues: Clue[] = clueTitles.map((title, index) => {
     attachments: [],
     isDuplicate: index % 7 === 0,
     mergedFrom: index % 7 === 0 ? [generateId()] : undefined,
+    timeline,
   };
 });

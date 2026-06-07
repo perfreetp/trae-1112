@@ -1,4 +1,4 @@
-import type { Visit, VisitStatus } from '@/types';
+import type { Visit, VisitStatus, TimelineRecord } from '@/types';
 import { getDaysAgo, getRandomItem, getRandomInt, generateId } from '@/utils/format';
 import { AREAS, GRID_WORKERS } from '@/utils/constants';
 
@@ -35,16 +35,39 @@ export const mockVisits: Visit[] = Array.from({ length: 15 }, (_, index) => {
   const status = index < 3 ? 'pending' as VisitStatus : getRandomItem(statuses);
   const planDaysAgo = getRandomInt(0, 10);
   const planDate = getDaysAgo(status === 'overdue' ? planDaysAgo + 5 : planDaysAgo);
+  const visitor = getRandomItem(GRID_WORKERS);
+  const purpose = getRandomItem(visitPurposes);
+  
+  const timeline: TimelineRecord[] = [{
+    id: generateId(),
+    time: planDate.toISOString(),
+    action: 'create_visit',
+    actionName: '发起走访',
+    operator: visitor,
+    description: `创建走访任务，目的：${purpose}`,
+  }];
+  
+  if (status === 'completed') {
+    timeline.push({
+      id: generateId(),
+      time: planDate.toISOString(),
+      action: 'complete_visit',
+      actionName: '完成走访',
+      operator: visitor,
+      description: '已完成走访并录入结果',
+    });
+  }
   
   return {
     id: generateId(),
+    title: `${purpose} - ${getRandomItem(visitedPersons)}`,
     planDate: planDate.toISOString(),
     actualDate: status === 'completed' ? planDate.toISOString() : undefined,
-    visitor: getRandomItem(GRID_WORKERS),
+    visitor,
     visitedPerson: getRandomItem(visitedPersons),
     visitedAddress: getRandomItem(addresses),
     area: getRandomItem(AREAS),
-    purpose: getRandomItem(visitPurposes),
+    purpose,
     content: status === 'completed' 
       ? '走访顺利，了解到当事人近期情绪稳定，纠纷矛盾已初步缓和。建议继续关注，一周后再次回访。' 
       : '',
@@ -53,5 +76,6 @@ export const mockVisits: Visit[] = Array.from({ length: 15 }, (_, index) => {
     status,
     statusName: statusNames[status],
     createTime: planDate.toISOString(),
+    timeline,
   };
 });

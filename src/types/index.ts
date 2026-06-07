@@ -7,6 +7,36 @@ export type MediationResult = 'pending' | 'success' | 'failed' | 'escalated';
 export type MessageType = 'system' | 'task' | 'warning' | 'reminder';
 export type Priority = 'low' | 'medium' | 'high';
 export type UserRole = 'admin' | 'grid' | 'mediator';
+export type TimelineActionType = 
+  | 'register' 
+  | 'merge' 
+  | 'create_visit' 
+  | 'complete_visit' 
+  | 'create_mediation' 
+  | 'assign_mediator' 
+  | 'mediation_record'
+  | 'escalate' 
+  | 'follow_up'
+  | 'resolve'
+  | 'close';
+
+export interface TimelineRecord {
+  id: string;
+  time: string;
+  action: TimelineActionType;
+  actionName: string;
+  operator: string;
+  description: string;
+  relatedId?: string;
+  relatedType?: 'clue' | 'visit' | 'mediation';
+}
+
+export interface MergedInfo {
+  sourceId: string;
+  sourceTitle: string;
+  sourceLocation: string;
+  mergeTime: string;
+}
 
 export interface Clue {
   id: string;
@@ -30,12 +60,16 @@ export interface Clue {
   deadline?: string;
   attachments: string[];
   mergedFrom?: string[];
+  mergedInfos?: MergedInfo[];
   isDuplicate: boolean;
+  timeline: TimelineRecord[];
 }
 
 export interface Visit {
   id: string;
   clueId?: string;
+  clueTitle?: string;
+  title: string;
   planDate: string;
   actualDate?: string;
   visitor: string;
@@ -49,6 +83,7 @@ export interface Visit {
   status: VisitStatus;
   statusName: string;
   createTime: string;
+  timeline: TimelineRecord[];
 }
 
 export interface Party {
@@ -76,6 +111,7 @@ export interface FollowUp {
 export interface Mediation {
   id: string;
   clueId: string;
+  clueTitle?: string;
   title: string;
   parties: Party[];
   mediator: string;
@@ -93,6 +129,8 @@ export interface Mediation {
   createTime: string;
   area: string;
   riskLevel: RiskLevel;
+  timeline: TimelineRecord[];
+  isEscalatedFromFailed?: boolean;
 }
 
 export interface PersonRecord {
@@ -129,10 +167,12 @@ export interface Message {
   title: string;
   content: string;
   relatedId?: string;
-  relatedType?: string;
+  relatedType?: 'clue' | 'visit' | 'mediation';
+  navigatePath?: string;
   sender: string;
   receiver: string;
   isRead: boolean;
+  isHandled: boolean;
   createTime: string;
   priority: Priority;
 }

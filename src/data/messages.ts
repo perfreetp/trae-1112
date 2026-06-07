@@ -21,6 +21,18 @@ export const mockMessages: Message[] = messageTemplates.map((msg, index) => {
   const priority = type === 'warning' ? 'high' : type === 'task' ? 'medium' : 'low';
   const daysAgo = getRandomInt(0, 7);
   
+  const relatedTypeMap: Record<number, 'clue' | 'visit' | 'mediation' | undefined> = {
+    0: 'clue',
+    1: 'mediation',
+    2: 'visit',
+  };
+  const relatedType = relatedTypeMap[index % 3];
+  const navigatePathMap: Record<string, string> = {
+    clue: '/clues',
+    visit: '/visits',
+    mediation: '/mediation',
+  };
+  
   return {
     id: generateId(),
     type,
@@ -32,11 +44,13 @@ export const mockMessages: Message[] = messageTemplates.map((msg, index) => {
     }[type],
     title: msg.title,
     content: msg.content,
-    relatedId: index % 3 === 0 ? generateId() : undefined,
-    relatedType: index % 3 === 0 ? 'clue' : undefined,
+    relatedId: relatedType ? generateId() : undefined,
+    relatedType,
+    navigatePath: relatedType ? navigatePathMap[relatedType] : undefined,
     sender: '系统管理员',
     receiver: '全体用户',
     isRead: index > 3,
+    isHandled: index > 5,
     createTime: getDaysAgo(daysAgo).toISOString(),
     priority,
   };

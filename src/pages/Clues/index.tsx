@@ -18,18 +18,90 @@ import {
   Link,
   Image as ImageIcon,
   X,
-  Check
+  Check,
+  User,
+  Calendar,
+  FileText,
+  UserPlus,
+  Handshake,
+  ChevronRight
 } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { CLUE_TYPES, RISK_LEVELS, CLUE_STATUS, AREAS } from '@/utils/constants';
+import { CLUE_TYPES, RISK_LEVELS, CLUE_STATUS, AREAS, GRID_WORKERS, MEDIATORS } from '@/utils/constants';
 import { formatDate, cn, generateId } from '@/utils/format';
-import type { Clue } from '@/types';
+import type { Clue, TimelineRecord } from '@/types';
+
+const getTimelineIcon = (action: string) => {
+  switch (action) {
+    case 'register': return <FileText className="w-4 h-4" />;
+    case 'merge': return <Merge className="w-4 h-4" />;
+    case 'create_visit': return <UserPlus className="w-4 h-4" />;
+    case 'complete_visit': return <CheckCircle className="w-4 h-4" />;
+    case 'create_mediation': return <Handshake className="w-4 h-4" />;
+    case 'assign_mediator': return <User className="w-4 h-4" />;
+    case 'mediation_record': return <FileText className="w-4 h-4" />;
+    case 'escalate': return <AlertTriangle className="w-4 h-4" />;
+    case 'resolve': return <CheckCircle className="w-4 h-4" />;
+    case 'close': return <XCircle className="w-4 h-4" />;
+    default: return <Clock className="w-4 h-4" />;
+  }
+};
+
+const getTimelineColor = (action: string) => {
+  switch (action) {
+    case 'register': return 'bg-blue-500';
+    case 'merge': return 'bg-purple-500';
+    case 'create_visit': return 'bg-green-500';
+    case 'complete_visit': return 'bg-green-600';
+    case 'create_mediation': return 'bg-orange-500';
+    case 'assign_mediator': return 'bg-orange-600';
+    case 'mediation_record': return 'bg-gray-500';
+    case 'escalate': return 'bg-red-500';
+    case 'resolve': return 'bg-emerald-500';
+    case 'close': return 'bg-gray-600';
+    default: return 'bg-gray-400';
+  }
+};
+
+const Timeline = ({ records }: { records: TimelineRecord[] }) => (
+  <div className="space-y-4">
+    {records.slice().reverse().map((record, idx) => (
+      <div key={record.id} className="flex gap-4">
+        <div className="flex flex-col items-center">
+          <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-white flex-shrink-0", getTimelineColor(record.action))}>
+            {getTimelineIcon(record.action)}
+          </div>
+          {idx < records.length - 1 && <div className="w-0.5 flex-1 bg-gray-200 mt-1" />}
+        </div>
+        <div className="flex-1 pb-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium text-gray-900">{record.actionName}</span>
+            <span className="text-xs text-gray-400">{formatDate(record.time)}</span>
+          </div>
+          <p className="text-sm text-gray-600">{record.description}</p>
+          <p className="text-xs text-gray-400 mt-1">操作人：{record.operator}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 export default function Clues() {
-  const { clues, addClue, updateClue, deleteClue, mergeClues } = useAppStore();
+  const { 
+    clues, 
+    addClue, 
+    updateClue, 
+    deleteClue, 
+    mergeClues,
+    createVisitFromClue,
+    createMediationFromClue,
+    user
+  } = useAppStore();
   const [showModal, setShowModal] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
+  const [showCreateVisit, setShowCreateVisit] = useState(false);
+  const [showCreateMediation, setShowCreateMediation] = useState(false);
   const [selectedClue, setSelectedClue] = useState<Clue | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState<string>('');
   const [mergeSourceIds, setMergeSourceIds] = useState<string[]>([]);
@@ -51,6 +123,17 @@ export default function Clues() {
     riskLevel: 'medium' as const,
     attachments: [] as string[],
   });
+  const [visitForm, setVisitForm] = useState({
+    planDate: '',
+    visitor: '',
+    purpose: '线索核实走访',
+    content: '',
+  });
+  const [mediationForm, setMediationForm] = useState({
+    mediator: '',
+    deadline: '',
+    content: '',
+  });
 
   const filteredClues = clues.filter(clue => {
     const matchSearch = clue.title.includes(searchText) || clue.description.includes(searchText);
@@ -65,10 +148,17 @@ export default function Clues() {
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      const newPhotos = Array.from(files).map(() => 
-        `https://picsum.photos/400/300?random=${generateId()}`
-      );
-      setNewClue({ ...newClue, attachments: [...newClue.attachments, ...newPhotos] });
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setNewClue(prev => ({ 
+            ...prev, 
+            attachments: [...prev.attachments, result] 
+          }));
+        };
+        reader.readAsDataURL(file);
+      });
     }
   };
 
@@ -102,7 +192,7 @@ export default function Clues() {
   const handleSubmit = () => {
     if (!newClue.title.trim()) return;
     addClue({
-      id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
+      id: generateId(),
       ...newClue,
       typeName: CLUE_TYPES[newClue.type],
       involvedPersons: newClue.involvedPersons.split(',').map(s => s.trim()).filter(Boolean),
@@ -111,6 +201,14 @@ export default function Clues() {
       createTime: new Date().toISOString(),
       updateTime: new Date().toISOString(),
       isDuplicate: false,
+      timeline: [{
+        id: generateId(),
+        time: new Date().toISOString(),
+        action: 'register',
+        actionName: '线索登记',
+        operator: newClue.reporter || user.name,
+        description: `网格员上报线索：${newClue.title}`,
+      }],
     });
     setShowModal(false);
     setNewClue({
@@ -131,7 +229,7 @@ export default function Clues() {
 
   const handleMerge = () => {
     if (!mergeTargetId || mergeSourceIds.length === 0) return;
-    mergeClues(mergeTargetId, mergeSourceIds);
+    mergeClues(mergeTargetId, mergeSourceIds, user.name);
     setShowMerge(false);
     setMergeTargetId('');
     setMergeSourceIds([]);
@@ -143,6 +241,32 @@ export default function Clues() {
     } else {
       setMergeSourceIds([...mergeSourceIds, id]);
     }
+  };
+
+  const handleCreateVisit = () => {
+    if (!selectedClue || !visitForm.planDate) return;
+    createVisitFromClue(selectedClue.id, {
+      planDate: new Date(visitForm.planDate).toISOString(),
+      visitor: visitForm.visitor || user.name,
+      purpose: visitForm.purpose,
+      content: visitForm.content,
+    }, user.name);
+    setShowCreateVisit(false);
+    setShowDetail(false);
+    setVisitForm({ planDate: '', visitor: '', purpose: '线索核实走访', content: '' });
+    alert('走访任务已创建！可在「入户走访」页面查看');
+  };
+
+  const handleCreateMediation = () => {
+    if (!selectedClue || !mediationForm.mediator) return;
+    createMediationFromClue(selectedClue.id, {
+      mediator: mediationForm.mediator,
+      deadline: mediationForm.deadline ? new Date(mediationForm.deadline).toISOString() : undefined,
+    }, user.name);
+    setShowCreateMediation(false);
+    setShowDetail(false);
+    setMediationForm({ mediator: '', deadline: '', content: '' });
+    alert('调解案件已创建！可在「调解流转」页面查看');
   };
 
   return (
@@ -532,12 +656,32 @@ export default function Clues() {
       {showDetail && selectedClue && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowDetail(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
               <h3 className="text-lg font-semibold text-gray-900">线索详情</h3>
-              <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedClue.status !== 'resolved' && selectedClue.status !== 'closed' && (
+                  <>
+                    <button
+                      onClick={() => setShowCreateVisit(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors text-sm"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      发起走访
+                    </button>
+                    <button
+                      onClick={() => setShowCreateMediation(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors text-sm"
+                    >
+                      <Handshake className="w-4 h-4" />
+                      转入调解
+                    </button>
+                  </>
+                )}
+                <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600">
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <div className="p-6 space-y-6">
               <div>
@@ -563,7 +707,7 @@ export default function Clues() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">所属区域</p>
                   <p className="text-sm font-medium text-gray-900">{selectedClue.area}</p>
@@ -601,14 +745,22 @@ export default function Clues() {
                 </div>
               </div>
 
-              {selectedClue.mergedFrom && selectedClue.mergedFrom.length > 0 && (
+              {selectedClue.mergedInfos && selectedClue.mergedInfos.length > 0 && (
                 <div>
                   <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
                     <Link className="w-4 h-4" />
-                    合并来源（{selectedClue.mergedFrom.length}条）
+                    合并来源（{selectedClue.mergedInfos.length}条）
                   </p>
-                  <div className="p-4 bg-purple-50 rounded-xl">
-                    <p className="text-sm text-purple-700">已合并 {selectedClue.mergedFrom.length} 条重复线索</p>
+                  <div className="space-y-2">
+                    {selectedClue.mergedInfos.map((info, idx) => (
+                      <div key={idx} className="p-3 bg-purple-50 rounded-xl">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-purple-700">{info.sourceTitle}</p>
+                          <p className="text-xs text-purple-500">{formatDate(info.mergeTime)}</p>
+                        </div>
+                        <p className="text-xs text-purple-600 mt-1">{info.sourceLocation}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -619,7 +771,7 @@ export default function Clues() {
                     <ImageIcon className="w-4 h-4" />
                     现场照片（{selectedClue.attachments.length}张）
                   </p>
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
                     {selectedClue.attachments.map((photo, index) => (
                       <div key={index} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
                         <img src={photo} alt="" className="w-full h-full object-cover" />
@@ -628,6 +780,155 @@ export default function Clues() {
                   </div>
                 </div>
               )}
+
+              <div>
+                <p className="text-sm text-gray-500 mb-4 flex items-center gap-1">
+                  <Clock className="w-4 h-4" />
+                  处理时间轴
+                </p>
+                <Timeline records={selectedClue.timeline || []} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateVisit && selectedClue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowCreateVisit(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">发起入户走访</h3>
+              <button onClick={() => setShowCreateVisit(false)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-blue-50 rounded-xl">
+                <p className="text-sm text-blue-700">线索：{selectedClue.title}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">计划走访日期 *</label>
+                <input
+                  type="date"
+                  value={visitForm.planDate}
+                  onChange={(e) => setVisitForm({ ...visitForm, planDate: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">走访负责人</label>
+                <select
+                  value={visitForm.visitor}
+                  onChange={(e) => setVisitForm({ ...visitForm, visitor: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">请选择负责人</option>
+                  {GRID_WORKERS.map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">走访目的</label>
+                <input
+                  type="text"
+                  value={visitForm.purpose}
+                  onChange={(e) => setVisitForm({ ...visitForm, purpose: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">处理说明</label>
+                <textarea
+                  value={visitForm.content}
+                  onChange={(e) => setVisitForm({ ...visitForm, content: e.target.value })}
+                  placeholder="请输入走访说明"
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+            </div>
+            <div className="bg-gray-50 border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowCreateVisit(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateVisit}
+                disabled={!visitForm.planDate}
+                className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                创建走访
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateMediation && selectedClue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowCreateMediation(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">转入调解</h3>
+              <button onClick={() => setShowCreateMediation(false)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-orange-50 rounded-xl">
+                <p className="text-sm text-orange-700">线索：{selectedClue.title}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">调解员 *</label>
+                <select
+                  value={mediationForm.mediator}
+                  onChange={(e) => setMediationForm({ ...mediationForm, mediator: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">请选择调解员</option>
+                  {MEDIATORS.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">调解截止日期</label>
+                <input
+                  type="date"
+                  value={mediationForm.deadline}
+                  onChange={(e) => setMediationForm({ ...mediationForm, deadline: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">处理说明</label>
+                <textarea
+                  value={mediationForm.content}
+                  onChange={(e) => setMediationForm({ ...mediationForm, content: e.target.value })}
+                  placeholder="请输入调解说明"
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+            </div>
+            <div className="bg-gray-50 border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowCreateMediation(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateMediation}
+                disabled={!mediationForm.mediator}
+                className="px-6 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                创建调解
+              </button>
             </div>
           </div>
         </div>

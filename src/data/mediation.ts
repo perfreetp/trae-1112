@@ -1,4 +1,4 @@
-import type { Mediation, MediationStatus, MediationResult, RiskLevel } from '@/types';
+import type { Mediation, MediationStatus, MediationResult, RiskLevel, TimelineRecord } from '@/types';
 import { getDaysAgo, getRandomItem, getRandomInt, generateId } from '@/utils/format';
 import { AREAS, MEDIATORS } from '@/utils/constants';
 
@@ -40,16 +40,60 @@ export const mockMediations: Mediation[] = mediationTitles.map((title, index) =>
   const daysAgo = getRandomInt(1, 20);
   const startDate = getDaysAgo(daysAgo);
   const riskLevel = index < 2 ? 'high' : getRandomItem(riskLevels);
+  const mediator = getRandomItem(MEDIATORS);
+  
+  const timeline: TimelineRecord[] = [{
+    id: generateId(),
+    time: startDate.toISOString(),
+    action: 'create_mediation',
+    actionName: '转入调解',
+    operator: '综治中心',
+    description: `案件转入调解程序，指派调解员：${mediator}`,
+  }];
+  
+  if (status !== 'assigned') {
+    timeline.push({
+      id: generateId(),
+      time: getDaysAgo(daysAgo - 1).toISOString(),
+      action: 'mediation_record',
+      actionName: '调解记录',
+      operator: mediator,
+      description: '进行调解沟通，记录双方意见',
+    });
+  }
+  
+  if (result === 'success') {
+    timeline.push({
+      id: generateId(),
+      time: getDaysAgo(daysAgo - 3).toISOString(),
+      action: 'resolve',
+      actionName: '调解成功',
+      operator: mediator,
+      description: '双方达成调解协议，纠纷成功化解',
+    });
+  }
+  
+  if (result === 'escalated') {
+    timeline.push({
+      id: generateId(),
+      time: getDaysAgo(daysAgo - 2).toISOString(),
+      action: 'escalate',
+      actionName: '升级上报',
+      operator: mediator,
+      description: '案件情况复杂，已升级上报上级部门处理',
+    });
+  }
   
   return {
     id: generateId(),
     clueId: generateId(),
+    clueTitle: title,
     title,
     parties: [
       { name: getRandomItem(persons), phone: `138${getRandomInt(10000000, 99999999)}`, role: 'plaintiff' },
       { name: getRandomItem(persons), phone: `139${getRandomInt(10000000, 99999999)}`, role: 'defendant' },
     ],
-    mediator: getRandomItem(MEDIATORS),
+    mediator,
     mediatorPhone: `137${getRandomInt(10000000, 99999999)}`,
     startTime: startDate.toISOString(),
     endTime: status === 'completed' || status === 'closed' 
@@ -63,14 +107,14 @@ export const mockMediations: Mediation[] = mediationTitles.map((title, index) =>
         id: generateId(),
         time: startDate.toISOString(),
         content: '第一次调解：双方到场陈述诉求，情绪较为激动，初步了解纠纷情况。',
-        participants: [getRandomItem(MEDIATORS), getRandomItem(persons), getRandomItem(persons)],
+        participants: [mediator, getRandomItem(persons), getRandomItem(persons)],
         attachments: [],
       },
       ...(status !== 'assigned' ? [{
         id: generateId(),
         time: getDaysAgo(daysAgo - 1).toISOString(),
         content: '第二次调解：分别与双方沟通，寻找利益平衡点，提出初步解决方案。',
-        participants: [getRandomItem(MEDIATORS), getRandomItem(persons)],
+        participants: [mediator, getRandomItem(persons)],
         attachments: [],
       }] : []),
     ],
@@ -91,5 +135,6 @@ export const mockMediations: Mediation[] = mediationTitles.map((title, index) =>
     createTime: startDate.toISOString(),
     area: getRandomItem(AREAS),
     riskLevel,
+    timeline,
   };
 });
